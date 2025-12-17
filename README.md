@@ -28,7 +28,10 @@ Common options:
 
 - `--courts all|<comma-separated filters>`: limit courts by name substring.
 - `--years <from>-<to>`: year filter (e.g., `2019-2020` or `2021`).
+- `--year-list <y1,y2,...>`: explicitly list years (comma or space separated).
 - `--max-cases <n>`: stop after N case downloads (useful for smoke tests).
+- `--court-url <url>`: skip discovery and start from a specific court listing URL.
+- `--court-name <name>`: friendly court name to use when `--court-url` is set.
 - `--delay-min/--delay-max`: random polite delay bounds (seconds).
 - `--resume true|false`: reuse `progress.jsonl` to skip finished cases.
 - `--headless true|false`: toggle Playwright headless mode.
@@ -52,6 +55,16 @@ Run Playwright with a visible browser:
 
 ```bash
 python bailii_downloader.py --out ./data --courts all --headless false
+```
+
+Use an explicit court and year list (e.g., EWCA Civ years provided manually):
+
+```bash
+python bailii_downloader.py \
+  --out ./data \
+  --court-url https://www.bailii.org/ew/cases/EWCA/Civ/ \
+  --year-list "2019 2020 2021" \
+  --court-name "Court of Appeal (Civil)"
 ```
 
 ## Resume behavior
