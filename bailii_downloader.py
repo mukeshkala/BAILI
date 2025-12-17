@@ -339,6 +339,11 @@ class BailiiDownloader:
             if month:
                 headings.append((month, tag))
 
+        if not headings:
+            # Fallback: some year pages list cases without month headings.
+            yield "All", soup.find_all("a")
+            return
+
         for idx, (month, tag) in enumerate(headings):
             next_tag = headings[idx + 1][1] if idx + 1 < len(headings) else None
             links: List[BeautifulSoup] = []
@@ -389,11 +394,17 @@ class BailiiDownloader:
         for month, link_tags in self._iter_month_sections(soup):
             if self.max_cases_reached:
                 break
-            await self.process_month(court_name, year_text, month, link_tags)
+            await self.process_month(court_name, year_text, year_url, month, link_tags)
 
     async def process_month(
-        self, court_name: str, year_text: str, month: str, link_tags: Sequence[BeautifulSoup]
+        self,
+        court_name: str,
+        year_text: str,
+        year_url: str,
+        month: str,
+        link_tags: Sequence[BeautifulSoup],
     ) -> None:
+        seen_urls: set[str] = set()
         for link in link_tags:
             if self.max_cases_reached:
                 break
@@ -401,7 +412,10 @@ class BailiiDownloader:
             if not href:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
-            url = urljoin(BASE_URL, href)
+            url = urljoin(year_url, href)
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
