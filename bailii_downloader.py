@@ -231,22 +231,40 @@ class BailiiDownloader:
         html = await self.fetch_html(BASE_URL)
         soup = BeautifulSoup(html, "html.parser")
         heading = soup.find(
-            lambda tag: tag.name in {"h2", "h3"}
-            and tag.get_text(strip=True).startswith("England and Wales Case Law")
+            lambda tag: tag.name in {"h2", "h3", "h4"}
+            and "england and wales" in tag.get_text(strip=True).lower()
         )
         if not heading:
-            raise RuntimeError("Could not locate 'England and Wales Case Law' section")
+            logging.warning(
+                "Falling back to regex-based court discovery; could not find England and Wales heading"
+            )
+            courts = self._discover_courts_by_pattern(soup)
+            if not courts:
+                raise RuntimeError("Could not locate England and Wales court list")
+            return courts
 
-        courts_heading = heading.find_next(
-            lambda tag: tag.name in {"h3", "h4"}
-            and "Courts" in tag.get_text(strip=True)
-        )
-        if not courts_heading:
-            raise RuntimeError("Could not locate Courts subsection")
+        def find_courts_list() -> Optional[BeautifulSoup]:
+            courts_heading = heading.find_next(
+                lambda tag: tag.name in {"h3", "h4", "h5"}
+                and re.search(r"(case law|courts)", tag.get_text(strip=True), re.I)
+            )
+            for anchor in (courts_heading, heading):
+                if not anchor:
+                    continue
+                ul = anchor.find_next("ul")
+                if ul:
+                    return ul
+            return None
 
-        courts_list = courts_heading.find_next("ul")
+        courts_list = find_courts_list()
         if not courts_list:
-            raise RuntimeError("Could not locate court list")
+            logging.warning(
+                "Could not locate structured court list, using pattern-based discovery"
+            )
+            courts = self._discover_courts_by_pattern(soup)
+            if not courts:
+                raise RuntimeError("Could not locate England and Wales court list")
+            return courts
 
         courts: List[Tuple[str, str]] = []
         for li in courts_list.find_all("li", recursive=False):
@@ -260,7 +278,34 @@ class BailiiDownloader:
             ):
                 continue
             courts.append((name, url))
+        if not courts:
+            logging.warning(
+                "Structured court list empty, falling back to pattern-based discovery"
+            )
+            courts = self._discover_courts_by_pattern(soup)
+            if not courts:
+                raise RuntimeError("Could not locate England and Wales court list")
         logging.info("Discovered %d courts", len(courts))
+        return courts
+
+    def _discover_courts_by_pattern(self, soup: BeautifulSoup) -> List[Tuple[str, str]]:
+        courts: List[Tuple[str, str]] = []
+        seen: set[str] = set()
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
+            absolute = urljoin(BASE_URL, href)
+            if not re.search(r"/ew/cases/", absolute, re.IGNORECASE):
+                continue
+            absolute = absolute.split("#", 1)[0]
+            if absolute in seen:
+                continue
+            seen.add(absolute)
+            name = link.get_text(" ", strip=True) or Path(absolute).stem or absolute
+            if self.court_filters and not any(
+                filt in name.lower() for filt in self.court_filters
+            ):
+                continue
+            courts.append((name, absolute))
         return courts
 
     def _extract_year_links(self, soup: BeautifulSoup, court_url: str) -> List[Tuple[str, str]]:
