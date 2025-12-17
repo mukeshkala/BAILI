@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -79,6 +79,19 @@ def parse_year_range(value: Optional[str]) -> Optional[Tuple[int, int]]:
     return start, end
 
 
+def parse_year_list(value: Optional[str]) -> Optional[List[str]]:
+    if not value:
+        return None
+    years: List[str] = []
+    for part in re.split(r"[\s,]+", value.strip()):
+        if not part:
+            continue
+        if not re.fullmatch(r"\d{4}", part):
+            raise argparse.ArgumentTypeError("--year-list must contain 4-digit years")
+        years.append(part)
+    return years or None
+
+
 def month_from_text(text: str) -> Optional[str]:
     for month in MONTH_NAMES:
         if re.search(rf"\b{re.escape(month)}\b", text, re.IGNORECASE):
@@ -117,6 +130,9 @@ class BailiiDownloader:
         self.delay_max = args.delay_max
         self.headless = args.headless
         self.resume = args.resume
+        self.court_url = args.court_url
+        self.court_name_override = args.court_name
+        self.direct_years = args.year_list
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
         self.progress: Dict[str, CaseRecord] = {}
@@ -332,6 +348,17 @@ class BailiiDownloader:
 
         return year_links
 
+    def _derive_court_name(self, court_url: str) -> str:
+        if self.court_name_override:
+            return self.court_name_override
+        parsed = urlparse(court_url)
+        path = Path(parsed.path.rstrip("/"))
+        if path.name:
+            return path.name
+        if path.parent.name:
+            return path.parent.name
+        return court_url
+
     def _iter_month_sections(self, soup: BeautifulSoup) -> Iterable[Tuple[str, List[BeautifulSoup]]]:
         headings = []
         for tag in soup.find_all(["h2", "h3", "h4", "h5", "b", "strong"]):
@@ -365,9 +392,19 @@ class BailiiDownloader:
         if self.max_cases_reached:
             return
         logging.info("Processing court: %s", court_name)
-        html = await self.fetch_html(court_url)
-        soup = BeautifulSoup(html, "html.parser")
-        year_links = self._extract_year_links(soup, court_url)
+        year_links: List[Tuple[str, str]] = []
+        if self.direct_years:
+            for year in self.direct_years:
+                year_int = int(year)
+                if self.year_range and not (
+                    self.year_range[0] <= year_int <= self.year_range[1]
+                ):
+                    continue
+                year_links.append((year, urljoin(court_url, f"{year}/")))
+        else:
+            html = await self.fetch_html(court_url)
+            soup = BeautifulSoup(html, "html.parser")
+            year_links = self._extract_year_links(soup, court_url)
         if not year_links:
             logging.warning("No year links found for %s", court_name)
             return
@@ -514,7 +551,10 @@ class BailiiDownloader:
 
     async def run(self) -> None:
         self.load_progress()
-        courts = await self.discover_courts()
+        if self.court_url:
+            courts = [(self._derive_court_name(self.court_url), self.court_url)]
+        else:
+            courts = await self.discover_courts()
         try:
             for court_name, court_url in courts:
                 if self.max_cases_reached:
@@ -534,9 +574,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Comma-separated court name filters or 'all'",
     )
     parser.add_argument(
+        "--court-url",
+        default=None,
+        help="Explicit court base URL (e.g., https://www.bailii.org/ew/cases/EWCA/Civ/)",
+    )
+    parser.add_argument(
+        "--court-name",
+        default=None,
+        help="Friendly court name when using --court-url",
+    )
+    parser.add_argument(
         "--years",
         default=None,
         help="Year filter in YYYY or YYYY-YYYY format",
+    )
+    parser.add_argument(
+        "--year-list",
+        default=None,
+        type=parse_year_list,
+        help="Comma- or space-separated list of explicit years to process",
     )
     parser.add_argument(
         "--max-cases",
