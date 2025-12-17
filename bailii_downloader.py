@@ -479,7 +479,7 @@ class BailiiDownloader:
                 year=year_text,
                 month=month,
                 title=title,
-                url=url,
+                url=normalized_url,
                 pdf_path=str(pdf_path),
                 status=status,
                 error=error,
