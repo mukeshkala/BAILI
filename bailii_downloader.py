@@ -235,9 +235,6 @@ class BailiiDownloader:
             and "england and wales" in tag.get_text(strip=True).lower()
         )
         if not heading:
-            heading = soup.find(string=re.compile("England and Wales Case Law", re.I))
-
-        if not heading:
             logging.warning(
                 "Falling back to regex-based court discovery; could not find England and Wales heading"
             )
@@ -247,23 +244,16 @@ class BailiiDownloader:
             return courts
 
         def find_courts_list() -> Optional[BeautifulSoup]:
-            anchor = heading if hasattr(heading, "find_next") else heading.parent
-            courts_heading = anchor.find_next(  # type: ignore[call-arg]
+            courts_heading = heading.find_next(
                 lambda tag: tag.name in {"h3", "h4", "h5"}
                 and re.search(r"(case law|courts)", tag.get_text(strip=True), re.I)
             )
-            for candidate in (courts_heading, anchor):
-                if not candidate:
+            for anchor in (courts_heading, heading):
+                if not anchor:
                     continue
-                ul = candidate.find_next("ul")
+                ul = anchor.find_next("ul")
                 if ul:
                     return ul
-                # walk a few siblings in case the list is separated by text nodes
-                for sibling in getattr(candidate, "next_siblings", []):
-                    if getattr(sibling, "name", "").lower() in {"h2", "h3", "h4"}:
-                        break
-                    if getattr(sibling, "name", "").lower() == "ul":
-                        return sibling
             return None
 
         courts_list = find_courts_list()
@@ -307,8 +297,6 @@ class BailiiDownloader:
             if not re.search(r"/ew/cases/", absolute, re.IGNORECASE):
                 continue
             absolute = absolute.split("#", 1)[0]
-            if re.search(r"/ew/cases/.+?/\\d{4}/", absolute, re.IGNORECASE):
-                continue  # skip direct year links; we only want court roots
             if absolute in seen:
                 continue
             seen.add(absolute)
