@@ -423,7 +423,14 @@ class BailiiDownloader:
         logging.info("Processing year %s for %s", year_text, court_name)
         html = await self.fetch_html(year_url)
         soup = BeautifulSoup(html, "html.parser")
-        for month, link_tags in self._iter_month_sections(soup):
+        month_sections = list(self._iter_month_sections(soup))
+        if not month_sections:
+            # Some legacy year pages list cases without month headings; fall back to
+            # processing all links as a single bucket.
+            all_links = soup.find_all("a")
+            if all_links:
+                month_sections = [("Unknown", all_links)]
+        for month, link_tags in month_sections:
             if self.max_cases_reached:
                 break
             await self.process_month(court_name, year_text, year_url, month, link_tags)
