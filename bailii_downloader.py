@@ -457,6 +457,10 @@ class BailiiDownloader:
                     "Skipping non-case link outside year scope: %s (href=%s)", title, href
                 )
                 continue
+            if url in seen_urls:
+                logging.debug("Skipping duplicate case link: %s", url)
+                continue
+            seen_urls.add(url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
