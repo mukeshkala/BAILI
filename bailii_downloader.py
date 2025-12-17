@@ -423,7 +423,17 @@ class BailiiDownloader:
         logging.info("Processing year %s for %s", year_text, court_name)
         html = await self.fetch_html(year_url)
         soup = BeautifulSoup(html, "html.parser")
-        for month, link_tags in self._iter_month_sections(soup):
+        month_sections = list(self._iter_month_sections(soup))
+        if not month_sections:
+            # Some legacy year pages list cases without month headings; fall back to
+            # processing all links as a single bucket.
+            all_links = soup.find_all("a")
+            if all_links:
+                month_sections = [("Unknown", all_links)]
+        if not month_sections:
+            logging.warning("No links found for year %s (%s)", year_text, year_url)
+            return
+        for month, link_tags in month_sections:
             if self.max_cases_reached:
                 break
             await self.process_month(court_name, year_text, year_url, month, link_tags)
@@ -436,6 +446,8 @@ class BailiiDownloader:
         month: str,
         link_tags: Sequence[BeautifulSoup],
     ) -> None:
+        seen_urls: set[str] = set()
+        links_added = 0
         for link in link_tags:
             if self.max_cases_reached:
                 break
@@ -444,11 +456,15 @@ class BailiiDownloader:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
             url = urljoin(year_url, href)
-            if not re.search(rf"/{re.escape(year_text)}/[^/]+\\.html?$", url, re.IGNORECASE):
+            if not self._is_case_link(year_text, year_url, url):
                 logging.debug(
                     "Skipping non-case link outside year scope: %s (href=%s)", title, href
                 )
                 continue
+            if url in seen_urls:
+                logging.debug("Skipping duplicate case link: %s", url)
+                continue
+            seen_urls.add(url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
@@ -493,6 +509,26 @@ class BailiiDownloader:
 
             await self.download_case(record)
             self.processed_cases += 1
+            links_added += 1
+
+        if links_added == 0:
+            logging.warning(
+                "No downloadable case links detected for %s %s (%s)", court_name, year_text, month
+            )
+
+    def _is_case_link(self, year_text: str, year_url: str, absolute_url: str) -> bool:
+        parsed = urlparse(absolute_url)
+        if not parsed.path.lower().endswith((".html", ".htm")):
+            return False
+
+        # Prefer paths that contain the target year.
+        if re.search(rf"/{re.escape(year_text)}(/|$)", parsed.path):
+            return True
+
+        # Otherwise, allow links that live under the same year directory even if the
+        # year is omitted from the filename (e.g., directory indexes).
+        base_path = urlparse(year_url).path.rstrip("/")
+        return parsed.path.startswith(base_path + "/")
 
     async def download_case(self, record: CaseRecord) -> None:
         await self.ensure_browser()
