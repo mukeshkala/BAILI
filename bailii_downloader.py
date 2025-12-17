@@ -366,6 +366,11 @@ class BailiiDownloader:
             if month:
                 headings.append((month, tag))
 
+        if not headings:
+            # Fallback: some year pages list cases without month headings.
+            yield "All", soup.find_all("a")
+            return
+
         for idx, (month, tag) in enumerate(headings):
             next_tag = headings[idx + 1][1] if idx + 1 < len(headings) else None
             links: List[BeautifulSoup] = []
@@ -436,6 +441,7 @@ class BailiiDownloader:
         month: str,
         link_tags: Sequence[BeautifulSoup],
     ) -> None:
+        seen_urls: set[str] = set()
         for link in link_tags:
             if self.max_cases_reached:
                 break
