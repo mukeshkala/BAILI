@@ -407,6 +407,11 @@ class BailiiDownloader:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
             url = urljoin(year_url, href)
+            if not re.search(rf"/{re.escape(year_text)}/[^/]+\\.html?$", url, re.IGNORECASE):
+                logging.debug(
+                    "Skipping non-case link outside year scope: %s (href=%s)", title, href
+                )
+                continue
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
