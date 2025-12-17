@@ -430,9 +430,6 @@ class BailiiDownloader:
             all_links = soup.find_all("a")
             if all_links:
                 month_sections = [("Unknown", all_links)]
-        if not month_sections:
-            logging.warning("No links found for year %s (%s)", year_text, year_url)
-            return
         for month, link_tags in month_sections:
             if self.max_cases_reached:
                 break
@@ -446,15 +443,7 @@ class BailiiDownloader:
         month: str,
         link_tags: Sequence[BeautifulSoup],
     ) -> None:
-        seen_urls: set[str] = set()
         links_added = 0
-
-        def normalize_case_url(raw_url: str) -> str:
-            parsed = urlparse(raw_url)
-            # Drop fragment/query so anchor variations don't duplicate downloads.
-            normalized = parsed._replace(fragment="", query="")
-            return normalized.geturl()
-
         for link in link_tags:
             if self.max_cases_reached:
                 break
@@ -463,16 +452,15 @@ class BailiiDownloader:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
             url = urljoin(year_url, href)
-            normalized_url = normalize_case_url(url)
-            if not self._is_case_link(year_text, year_url, normalized_url):
+            if not self._is_case_link(year_text, year_url, url):
                 logging.debug(
                     "Skipping non-case link outside year scope: %s (href=%s)", title, href
                 )
                 continue
-            if normalized_url in seen_urls:
-                logging.debug("Skipping duplicate case link: %s", normalized_url)
+            if url in seen_urls:
+                logging.debug("Skipping duplicate case link: %s", url)
                 continue
-            seen_urls.add(normalized_url)
+            seen_urls.add(url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
