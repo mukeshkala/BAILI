@@ -230,53 +230,23 @@ class BailiiDownloader:
         logging.info("Fetching main database page: %s", BASE_URL)
         html = await self.fetch_html(BASE_URL)
         soup = BeautifulSoup(html, "html.parser")
-
-        def is_england_wales_heading(tag: BeautifulSoup) -> bool:
-            if tag.name not in {"h2", "h3", "h4"}:
-                return False
-            text = tag.get_text(" ", strip=True)
-            return bool(
-                re.search(r"England\s*&?\s*Wales", text, re.IGNORECASE)
-                and re.search(r"Case\s*Law", text, re.IGNORECASE)
-            )
-
-        heading = soup.find(is_england_wales_heading)
-        if not heading:
-            # Fallback: look for a heading that mentions England/Wales even if it omits "Case Law".
-            heading = soup.find(
-                lambda tag: tag.name in {"h2", "h3", "h4"}
-                and re.search(r"England\s*&?\s*Wales", tag.get_text(" ", strip=True), re.IGNORECASE)
-            )
+        heading = soup.find(
+            lambda tag: tag.name in {"h2", "h3"}
+            and tag.get_text(strip=True).startswith("England and Wales Case Law")
+        )
         if not heading:
             raise RuntimeError("Could not locate 'England and Wales Case Law' section")
 
-        def find_courts_list() -> Optional[BeautifulSoup]:
-            # First preference: a heading mentioning Courts that follows the England/Wales heading.
-            courts_heading = heading.find_next(
-                lambda tag: tag.name in {"h3", "h4"}
-                and re.search(r"courts?", tag.get_text(" ", strip=True), re.IGNORECASE)
-            )
-            if courts_heading:
-                list_el = courts_heading.find_next("ul")
-                if list_el:
-                    return list_el
-
-            # Fallback: the first UL after the section heading before the next sibling heading.
-            next_section = heading.find_next(
-                lambda tag: tag.name in {"h2", "h3", "h4"} and tag is not heading
-            )
-            cursor = heading
-            while True:
-                cursor = cursor.find_next(lambda t: t.name in {"ul", "h2", "h3", "h4"})
-                if cursor is None or cursor is next_section:
-                    break
-                if cursor.name == "ul":
-                    return cursor
-            return None
-
-        courts_list = find_courts_list()
-        if not courts_list:
+        courts_heading = heading.find_next(
+            lambda tag: tag.name in {"h3", "h4"}
+            and "Courts" in tag.get_text(strip=True)
+        )
+        if not courts_heading:
             raise RuntimeError("Could not locate Courts subsection")
+
+        courts_list = courts_heading.find_next("ul")
+        if not courts_list:
+            raise RuntimeError("Could not locate court list")
 
         courts: List[Tuple[str, str]] = []
         for li in courts_list.find_all("li", recursive=False):
