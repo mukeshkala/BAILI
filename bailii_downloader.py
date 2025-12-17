@@ -430,9 +430,6 @@ class BailiiDownloader:
             all_links = soup.find_all("a")
             if all_links:
                 month_sections = [("Unknown", all_links)]
-        if not month_sections:
-            logging.warning("No links found for year %s (%s)", year_text, year_url)
-            return
         for month, link_tags in month_sections:
             if self.max_cases_reached:
                 break
@@ -446,7 +443,6 @@ class BailiiDownloader:
         month: str,
         link_tags: Sequence[BeautifulSoup],
     ) -> None:
-        seen_urls: set[str] = set()
         links_added = 0
         for link in link_tags:
             if self.max_cases_reached:
