@@ -413,9 +413,6 @@ class BailiiDownloader:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
             url = urljoin(year_url, href)
-            if url in seen_urls:
-                continue
-            seen_urls.add(url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
             existing = self.progress.get(url)
