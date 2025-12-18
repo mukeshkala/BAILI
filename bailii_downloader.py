@@ -141,6 +141,7 @@ class BailiiDownloader:
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
+        self.seen_urls: set[str] = set()
 
     # ------------------------------------------------------------------
     # Progress handling
@@ -159,7 +160,9 @@ class BailiiDownloader:
                 except json.JSONDecodeError:
                     continue
                 record = CaseRecord(**data)
+                record.url = self._normalize_url(record.url)
                 self.progress[record.url] = record
+                self.seen_urls.add(record.url)
         logging.info("Loaded %d progress entries.", len(self.progress))
 
     def _append_progress(self, record: CaseRecord) -> None:
@@ -179,6 +182,9 @@ class BailiiDownloader:
         delay = random.uniform(self.delay_min, self.delay_max)
         logging.debug("Sleeping for %.2f seconds to be polite.", delay)
         time.sleep(delay)
+
+    def _normalize_url(self, url: str) -> str:
+        return url.split("#", 1)[0]
 
     def _fetch_html_sync(self, url: str) -> str:
         attempts = 0
@@ -452,18 +458,19 @@ class BailiiDownloader:
                 continue
             title = link.get_text(" ", strip=True) or Path(href).stem
             url = urljoin(year_url, href)
+            normalized_url = self._normalize_url(url)
             if not self._is_case_link(year_text, year_url, url):
                 logging.debug(
                     "Skipping non-case link outside year scope: %s (href=%s)", title, href
                 )
                 continue
-            if url in seen_urls:
+            if normalized_url in self.seen_urls:
                 logging.debug("Skipping duplicate case link: %s", url)
                 continue
-            seen_urls.add(url)
+            self.seen_urls.add(normalized_url)
             pdf_path = self._build_pdf_path(court_name, year_text, month, title)
 
-            existing = self.progress.get(url)
+            existing = self.progress.get(normalized_url)
             pdf_exists = pdf_path.exists()
             status = "downloaded" if pdf_exists else "pending"
             error = None
