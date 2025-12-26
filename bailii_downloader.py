@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import hashlib
 import json
 import logging
 import random
@@ -45,6 +46,7 @@ MONTH_NAMES = [
     "December",
 ]
 INVALID_FS_CHARS = r"\\/:*?\"<>|"
+MAX_FILENAME_CHARS = 150
 
 
 def sanitize_for_fs(value: str) -> str:
@@ -53,6 +55,20 @@ def sanitize_for_fs(value: str) -> str:
     sanitized = "".join("-" if ch in INVALID_FS_CHARS else ch for ch in value)
     sanitized = re.sub(r"\s+", " ", sanitized).strip()
     return sanitized or "untitled"
+
+
+def shorten_with_hash(value: str, max_length: int = MAX_FILENAME_CHARS) -> str:
+    """Ensure the string fits within max_length by appending a short hash.
+
+    The hash helps keep truncated filenames unique while preserving as much of the
+    original text as possible.
+    """
+
+    if len(value) <= max_length:
+        return value
+    suffix = hashlib.sha1(value.encode("utf-8")).hexdigest()[:8]
+    trimmed = value[: max_length - len(suffix) - 1].rstrip()
+    return f"{trimmed}_{suffix}"
 
 
 def str_to_bool(value: str) -> bool:
@@ -388,7 +404,7 @@ class BailiiDownloader:
         safe_court = sanitize_for_fs(court)
         safe_year = sanitize_for_fs(str(year))
         safe_month = sanitize_for_fs(month)
-        safe_title = sanitize_for_fs(title)
+        safe_title = shorten_with_hash(sanitize_for_fs(title))
         return self.output_dir / safe_court / safe_year / safe_month / f"{safe_title}.pdf"
 
     # ------------------------------------------------------------------
